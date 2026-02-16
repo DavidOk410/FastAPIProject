@@ -1,5 +1,7 @@
 import json
 import re
+import logging
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
@@ -13,6 +15,9 @@ from app.rag.loader import load_pdf
 from app.rag.splitter import split_documents
 from app.rag.vectordb import wipe_persist_dir, build_chroma_from_documents, load_chroma
 from app.rag.chain import build_chain
+
+
+log = logging.getLogger("rag.service")
 
 @dataclass
 class RAGService:
@@ -33,10 +38,60 @@ class RAGService:
                     pass
             return {"question": question, "answer": raw.strip(), "sources": [], "confidence": 0.0}
         except Exception as e:
-            return {"question": question, "answer": f"ERROR: {e}", "sources": [], "confidence": 0.0}
+            friendly = _friendly_runtime_error(e)
+            log.exception("RAG ask failed: %s", e)
+            return {
+                "question": question,
+                "answer": friendly,
+                "sources": [],
+                "confidence": 0.0,
+            }
+
+
+def _friendly_runtime_error(error: Exception) -> str:
+    """Return actionable error messages for common runtime backend issues."""
+    raw = str(error).strip()
+    normalized = raw.lower()
+
+    ollama_hints = (
+        "all connection attempts failed",
+        "connection refused",
+        "connecterror",
+        "failed to connect",
+        "max retries exceeded",
+    )
+    if any(hint in normalized for hint in ollama_hints):
+        return (
+            "LLM backend is unavailable. Start Ollama and ensure the model is installed "
+            f"(model: '{settings.LLM_MODEL}'). Original error: {raw}"
+        )
+
+    return f"Unexpected RAG runtime error: {raw}"
 
 
 _service: Optional[RAGService] = None
+
+
+def _resolve_doc_path(raw_path: str) -> Path:
+    """Resolve DOC_PATH robustly regardless of current working directory."""
+    path = Path(raw_path)
+    if path.is_absolute() and path.exists():
+        return path
+
+    project_root = Path(__file__).resolve().parents[2]
+    candidates = [
+        Path.cwd() / path,
+        project_root / path,
+        project_root / "app" / path,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+
+    tried = ", ".join(str(p) for p in candidates)
+    raise FileNotFoundError(
+        f"PDF file not found for DOC_PATH='{raw_path}'. CWD='{Path.cwd()}'. Tried: {tried}"
+    )
 
 
 def _build_service_sync() -> RAGService:
@@ -44,20 +99,27 @@ def _build_service_sync() -> RAGService:
     Синхронная сборка сервиса (PDF load + split + Chroma build/load + chain).
     Запускаем это в отдельном thread через anyio.to_thread.run_sync.
     """
+    log.info("REBUILD_INDEX=%s, PERSIST_DIR=%s", settings.REBUILD_INDEX, settings.PERSIST_DIR)
     if settings.REBUILD_INDEX:
+        log.info("REBUILD_INDEX=True: deleting persisted index at '%s'", settings.PERSIST_DIR)
         wipe_persist_dir(settings.PERSIST_DIR)
 
     # 1) Пытаемся загрузить существующую Chroma (быстрее)
     try:
+        log.info("Trying to load existing Chroma index from '%s'", settings.PERSIST_DIR)
         vector_db = load_chroma(
             embed_model=settings.EMBED_MODEL,
             collection_name=settings.COLLECTION_NAME,
             persist_dir=settings.PERSIST_DIR,
         )
-        _ = vector_db._collection.count()  # "touch"
-    except Exception:
+        doc_count = vector_db._collection.count()  # "touch"
+        log.info("Loaded existing Chroma index successfully (items=%s)", doc_count)
+    except Exception as e:
         # 2) Если не удалось — строим заново
-        docs = load_pdf(settings.DOC_PATH)
+        log.warning("Failed to load persisted Chroma index, rebuilding from PDF: %s", e)
+        resolved_doc_path = _resolve_doc_path(settings.DOC_PATH)
+        log.info("Using PDF file: %s", resolved_doc_path)
+        docs = load_pdf(str(resolved_doc_path))
         chunks = split_documents(docs, settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
         vector_db = build_chroma_from_documents(
             chunks,
@@ -65,6 +127,7 @@ def _build_service_sync() -> RAGService:
             collection_name=settings.COLLECTION_NAME,
             persist_dir=settings.PERSIST_DIR,
         )
+        log.info("Built new Chroma index from PDF at '%s'", resolved_doc_path)
 
     chain = build_chain(
         vector_db=vector_db,

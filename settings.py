@@ -16,6 +16,6 @@ class Settings(BaseSettings):
     N_QUERIES: int = 5
 
     # если True — при старте всегда пересоздаём индекс с нуля
-    REBUILD_INDEX: bool = False
+    REBUILD_INDEX: bool = True
 
 settings = Settings()
