@@ -1,11 +1,7 @@
 from pydantic_settings import BaseSettings
-from pathlib import Path
-
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
-    DOC_PATH: str = str(_PROJECT_ROOT / "Fluid-Mechanics-Module-7.pdf")
+    DOC_PATH: str = r".\Fluid-Mechanics-Module-7.pdf"
 
     LLM_MODEL: str = "llama3.1"
     EMBED_MODEL: str = "nomic-embed-text"
@@ -14,12 +10,10 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 300
 
     COLLECTION_NAME: str = "simple-rag"
-    PERSIST_DIR: str = "./chroma_db"  # сохранение индекса на диск
-
+    PERSIST_DIR: str = "./chroma_db_v5"   # ✅ ВОТ ТАК
     K_RETRIEVE: int = 6
     N_QUERIES: int = 5
 
-    # если True — при старте всегда пересоздаём индекс с нуля
-    REBUILD_INDEX: bool = False
+    REBUILD_INDEX: bool = False # ✅ если хочешь пересобрать
 
 settings = Settings()

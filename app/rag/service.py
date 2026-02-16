@@ -96,38 +96,64 @@ def _resolve_doc_path(raw_path: str) -> Path:
 
 def _build_service_sync() -> RAGService:
     """
-    Синхронная сборка сервиса (PDF load + split + Chroma build/load + chain).
-    Запускаем это в отдельном thread через anyio.to_thread.run_sync.
+    Синхронная сборка сервиса:
+    - если есть индекс -> load
+    - если нет -> build
+    - если REBUILD_INDEX=True -> build (но НЕ пытаемся wipe, если папка занята; используем новую папку или ручной stop)
     """
-    log.info("REBUILD_INDEX=%s, PERSIST_DIR=%s", settings.REBUILD_INDEX, settings.PERSIST_DIR)
-    if settings.REBUILD_INDEX:
-        log.info("REBUILD_INDEX=True: deleting persisted index at '%s'", settings.PERSIST_DIR)
-        wipe_persist_dir(settings.PERSIST_DIR)
+    persist_path = Path(settings.PERSIST_DIR)
+    persist_exists = persist_path.exists()
+    log.info("REBUILD_INDEX=%s, PERSIST_DIR=%s, persist_exists=%s",
+             settings.REBUILD_INDEX, settings.PERSIST_DIR, persist_exists)
 
-    # 1) Пытаемся загрузить существующую Chroma (быстрее)
-    try:
-        log.info("Trying to load existing Chroma index from '%s'", settings.PERSIST_DIR)
-        vector_db = load_chroma(
-            embed_model=settings.EMBED_MODEL,
-            collection_name=settings.COLLECTION_NAME,
-            persist_dir=settings.PERSIST_DIR,
-        )
-        doc_count = vector_db._collection.count()  # "touch"
-        log.info("Loaded existing Chroma index successfully (items=%s)", doc_count)
-    except Exception as e:
-        # 2) Если не удалось — строим заново
-        log.warning("Failed to load persisted Chroma index, rebuilding from PDF: %s", e)
-        resolved_doc_path = _resolve_doc_path(settings.DOC_PATH)
-        log.info("Using PDF file: %s", resolved_doc_path)
+    resolved_doc_path = _resolve_doc_path(settings.DOC_PATH)
+
+    # --- Decide: load vs build ---
+    should_build = settings.REBUILD_INDEX or (not persist_exists)
+
+    if should_build:
+        # Если rebuild, и папка существует — пробуем wipe.
+        # Если wipe не выходит из-за WinError32 — НЕ падаем: просто говорим, что нельзя rebuild пока база используется.
+        if persist_exists:
+            try:
+                wipe_persist_dir(settings.PERSIST_DIR)
+                persist_exists = False
+            except Exception as e:
+                # Это как раз твой WinError 32
+                raise RuntimeError(
+                    f"Cannot rebuild index because persist dir is in use: {settings.PERSIST_DIR}. "
+                    "Stop other uvicorn/python processes or change PERSIST_DIR to a new folder."
+                ) from e
+
+        log.info("Building index from PDF: %s", resolved_doc_path)
         docs = load_pdf(str(resolved_doc_path))
+        if not docs:
+            raise RuntimeError("PDF loader returned 0 pages (check DOC_PATH).")
+
         chunks = split_documents(docs, settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
+        log.info("Chunks created: %d", len(chunks))
+        if not chunks:
+            raise RuntimeError("Splitter returned 0 chunks (PDF may have no extractable text).")
+
         vector_db = build_chroma_from_documents(
             chunks,
             embed_model=settings.EMBED_MODEL,
             collection_name=settings.COLLECTION_NAME,
             persist_dir=settings.PERSIST_DIR,
         )
-        log.info("Built new Chroma index from PDF at '%s'", resolved_doc_path)
+        log.info("Index ready. count=%s", vector_db._collection.count())
+
+    else:
+        log.info("Loading existing index from %s", settings.PERSIST_DIR)
+        vector_db = load_chroma(
+            embed_model=settings.EMBED_MODEL,
+            collection_name=settings.COLLECTION_NAME,
+            persist_dir=settings.PERSIST_DIR,
+        )
+        count = vector_db._collection.count()
+        log.info("Loaded index. count=%s", count)
+        if count == 0:
+            raise RuntimeError("Persisted index is empty. Set REBUILD_INDEX=True to rebuild.")
 
     chain = build_chain(
         vector_db=vector_db,
@@ -137,6 +163,7 @@ def _build_service_sync() -> RAGService:
     )
 
     return RAGService(chain=chain)
+
 
 
 async def init_service() -> RAGService:
