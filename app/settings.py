@@ -1,7 +1,11 @@
+# app/settings.py
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    DOC_PATH: str = r".\Fluid-Mechanics-Module-7.pdf"
+    DOCS: list[dict] = [
+            {"doc_id": "fluid-mechanics-module-7", "path": r".\Fluid-Mechanics-Module-7.pdf"},
+            {"doc_id": "python-crash-course", "path": r".\Python Crash Course.pdf"},
+    ]
 
     LLM_MODEL: str = "llama3.1"
     EMBED_MODEL: str = "nomic-embed-text"
@@ -9,11 +13,15 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 1200
     CHUNK_OVERLAP: int = 300
 
-    COLLECTION_NAME: str = "simple-rag"
-    PERSIST_DIR: str = "./chroma_db_v5"   # ✅ ВОТ ТАК
-    K_RETRIEVE: int = 6
-    N_QUERIES: int = 5
+    # pgvector storage
+    DATABASE_URL: str = "dbname=mydb user=postgres password=postgres host=localhost port=5433"
+    PG_TABLE: str = "rag_chunks"
 
-    REBUILD_INDEX: bool = False # ✅ если хочешь пересобрать
+    # retrieval
+    K_RETRIEVE: int = 6
+    METRIC: str = "cosine"  # "cosine" or "l2"
+
+    # индексация
+    REBUILD_INDEX: bool = False
 
 settings = Settings()

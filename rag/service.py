@@ -11,7 +11,7 @@ from app.settings import settings
 # ✅ правильные импорты: из app.rag.*, а не app.rag.*
 from app.rag.loader import load_pdf
 from app.rag.splitter import split_documents
-from app.rag.vectordb import wipe_persist_dir, build_chroma_from_documents, load_chroma
+from app.rag.pgvector import wipe_persist_dir, build_chroma_from_documents, load_chroma
 from app.rag.chain import build_chain
 
 @dataclass

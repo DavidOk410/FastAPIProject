@@ -10,6 +10,7 @@ import logging
 logging.getLogger("test").info("Logging works")
 
 
+
 @asynccontextmanager
 async def lifespan(app_: FastAPI):
     await init_service()
@@ -26,8 +27,11 @@ app = FastAPI(
 async def root():
     return {"status": "ok", "docs": "/docs"}
 
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 @app.post("/ask")
 async def ask(req: AskRequest):
     service = await get_service()
-    return await service.ask(req.question)
+    return await service.ask(req.question, history=[t.model_dump() for t in req.history])

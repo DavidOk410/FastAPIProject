@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import List
 from langchain_core.output_parsers import PydanticOutputParser
+from typing import List, Literal, Optional
 
 class Source(BaseModel):
     page: int = Field(..., description="Page number in the PDF (1-based)")
@@ -16,5 +16,10 @@ parser = PydanticOutputParser(pydantic_object=RAGResponse)
 format_instructions = parser.get_format_instructions()
 
 # Для API (запрос/ответ)
+class Turn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
 class AskRequest(BaseModel):
     question: str
+    history: List[Turn] = []   # <-- new
