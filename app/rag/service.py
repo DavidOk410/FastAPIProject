@@ -21,9 +21,14 @@ log = logging.getLogger("rag.service")
 class RAGService:
     chain: Any
 
-    async def ask(self, question: str, history: Optional[list] = None) -> Dict[str, Any]:
+    async def ask(
+            self,
+            question: str,
+            history: Optional[list] = None,
+            doc_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         try:
-            inp = {"question": question, "history": history or []}
+            inp = {"question": question, "history": history or [], "doc_id": doc_id}
             out = await self.chain.ainvoke(inp)
             return out.model_dump()
         except OutputParserException as e:
@@ -34,10 +39,12 @@ class RAGService:
                     return json.loads(m.group(0))
                 except Exception:
                     pass
-            return {"question": question, "answer": raw.strip(), "sources": [], "confidence": 0.0}
+            return {"question": question, "answer": raw.strip(), "sources": [], "confidence": 0.0,
+                    "history": history or []}
         except Exception as e:
             log.exception("RAG ask failed: %s", e)
-            return {"question": question, "answer": f"ERROR: {e}", "sources": [], "confidence": 0.0}
+            return {"question": question, "answer": f"ERROR: {e}", "sources": [], "confidence": 0.0,
+                    "history": history or []}
 
 
 _service: Optional[RAGService] = None

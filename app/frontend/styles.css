@@ -1,0 +1,113 @@
+/* Page */
+
+body {
+  font-family: system-ui, Arial, sans-serif;
+  background: #f2f7ff;
+  max-width: 1200px;
+  margin: 40px auto;
+  padding: 0 20px;
+  color: #1f2b55;
+  font-size: 20px;
+}
+
+/* Title */
+
+h1 {
+  font-size: 44px;
+  margin-bottom: 28px;
+  color: #2a4fbf;
+}
+
+/* Chat window */
+
+#chat {
+  border: 3px solid #c7d8ff;
+  border-radius: 18px;
+  padding: 22px;
+  height: 72vh;
+  overflow-y: auto;
+  background: white;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+}
+
+/* Messages */
+
+.msg {
+  margin: 18px 0;
+  padding: 18px 22px;
+  border-radius: 16px;
+  white-space: pre-wrap;
+  font-size: 22px;
+  line-height: 1.6;
+}
+
+/* User message */
+
+.msg.user {
+  background: #e7f0ff;
+  border: 2px solid #c4d7ff;
+}
+
+/* Assistant message */
+
+.msg.assistant {
+  background: #f3f7ff;
+  border: 2px solid #dbe5ff;
+}
+
+/* Meta info */
+
+.meta {
+  margin-top: 8px;
+  font-size: 16px;
+  color: #6c7cc5;
+}
+
+/* Layout rows */
+
+.row {
+  display: flex;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+/* Inputs */
+
+input,
+select {
+  font-size: 22px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 2px solid #c4d7ff;
+  background: white;
+}
+
+/* Main question input */
+
+#q {
+  flex: 1;
+  font-size: 24px;
+  padding: 18px;
+}
+
+/* Buttons */
+
+button {
+  font-size: 22px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  border: 2px solid #a7c1ff;
+  background: #dbe7ff;
+  color: #1d3da3;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+button:hover {
+  background: #c6d8ff;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

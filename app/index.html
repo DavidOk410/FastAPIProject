@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RAG Chat</title>
+  <style>
+    body { font-family: system-ui, Arial; max-width: 900px; margin: 24px auto; padding: 0 12px; }
+    #chat { border: 1px solid #ddd; border-radius: 10px; padding: 12px; height: 60vh; overflow: auto; }
+    .msg { margin: 10px 0; padding: 10px; border-radius: 10px; white-space: pre-wrap; }
+    .user { background: #f3f4f6; }
+    .assistant { background: #eef2ff; }
+    .meta { color: #555; font-size: 12px; margin-top: 12px; }
+    .row { display: flex; gap: 8px; margin-top: 12px; }
+    input { padding: 10px; border-radius: 10px; border: 1px solid #ddd; }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ddd; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+     <link rel="stylesheet" href="frontend/styles.css">
+</head>
+<body>
+  <h1>RAG Chat</h1>
+
+  <div class="row">
+    <label>API URL:</label>
+    <input id="apiUrl" value="http://127.0.0.1:8000/ask" style="flex:1" />
+    <label>doc_id:</label>
+    <select id="docId" style="width:260px">
+        <option value="">All documents</option>
+    </select>
+  </div>
+
+  <div id="chat"></div>
+
+  <div class="row">
+    <input id="q" style="flex:1" placeholder="Ask something..." />
+    <button id="send">Send</button>
+    <button id="clear">Clear</button>
+  </div>
+
+  <script src="frontend/index.js" defer></script>
+</body>
+</html>

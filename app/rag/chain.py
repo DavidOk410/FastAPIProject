@@ -1,29 +1,20 @@
-import re
+# app/rag/chain.py
 import json
+import logging
+import re
+import time
 from typing import Any, Dict, Union
 
-from pydantic import BaseModel, Field
-from typing import List as TList
-
-from langchain_core.output_parsers import PydanticOutputParser
+import anyio
 from langchain_core.exceptions import OutputParserException
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_ollama import ChatOllama
 from langchain.prompts import ChatPromptTemplate
 
 from app.rag.pgvector import PgVectorStore
+from app.schemas import RAGResponse, Source  # <-- unified schemas
 
-
-class Source(BaseModel):
-    snippet: str = ""  # forgiving default
-    meta: dict = Field(default_factory=dict)
-
-
-class RAGResponse(BaseModel):
-    question: str
-    answer: str
-    sources: TList[Source] = Field(default_factory=list)
-    confidence: float = 0.5
-    history: list = Field(default_factory=list)  # echo input history back
+log = logging.getLogger("rag.chain")
 
 
 def build_chain(store: PgVectorStore, llm_model: str, k: int, metric: str):
@@ -38,32 +29,33 @@ def build_chain(store: PgVectorStore, llm_model: str, k: int, metric: str):
             lines.append(f"{prefix}: {content}")
         return "\n".join(lines)
 
-    # Avoid passing pydantic schema refs ($ref) to the model; give a simple explicit format instead.
     rag_template = """Return ONLY valid JSON (no markdown, no extra text).
 
-JSON format:
-{{
-  "question": "...",
-  "answer": "...",
-  "sources": [{{"snippet": "...", "meta": {{}}}}],
-  "confidence": 0.0,
-  "history": []
-}}
-
-Rules:
-- Use ONLY the context.
-- If not enough info, set answer to "NOT_FOUND".
-- sources must be a list of objects with keys "snippet" and "meta".
-- history in the response must be EXACTLY the same list you received in the input (echo it back unchanged).
-
-Conversation history (for interpreting follow-ups, not a source of truth):
-{history}
-
-Context:
-{context}
-
-Question: {question}
-"""
+    JSON format:
+    {{
+      "question": "...",
+      "answer": "...",
+      "sources": [{{"snippet": "...", "meta": {{}}}}],
+      "confidence": 0.0,
+      "history": []
+    }}
+    
+    Rules:
+    - Base the answer primarily on the context.
+    - If the context is incomplete, say so clearly.
+    - State the reasons of low confidence in the end of the answer. 
+    - Do not sound overly certain unless the context is explicit.
+    - If you are printing code, print it on different lines.
+    - If not enough info is available, answer with "NOT_FOUND".
+    
+    Conversation history:
+    {history}
+    
+    Context:
+    {context}
+    
+    Question: {question}
+    """
     prompt = ChatPromptTemplate.from_template(rag_template)
 
     try:
@@ -71,17 +63,23 @@ Question: {question}
     except TypeError:
         llm = ChatOllama(model=llm_model, temperature=0)
 
-    def _sanitize_sources(data: dict) -> dict:
+    def sanitize_sources(data: dict) -> dict:
         srcs = data.get("sources", [])
         clean = []
-        for s in srcs if isinstance(srcs, list) else []:
-            if isinstance(s, dict):
-                clean.append({"snippet": s.get("snippet", ""), "meta": s.get("meta", {}) or {}})
+        if isinstance(srcs, list):
+            for s in srcs:
+                if isinstance(s, dict):
+                    clean.append(
+                        {
+                            "snippet": s.get("snippet", "") or "",
+                            "meta": s.get("meta", {}) or {},
+                        }
+                    )
         data["sources"] = clean
         return data
 
     async def ainvoke(inp: Union[str, Dict[str, Any]]) -> RAGResponse:
-        # Accept either plain question string OR dict {"question": ..., "history": ..., "doc_id": ...}
+        # 1) Parse input
         if isinstance(inp, str):
             question = inp
             history = []
@@ -98,12 +96,25 @@ Question: {question}
 
         filters = {"doc_id": doc_id_inp} if doc_id_inp else None
 
-        docs = store.similarity_search(
-            query=question,
-            k=k,
-            metric=metric,
-            filters=filters,
-        )
+        # 2) Retrieval with timeout
+        t0 = time.time()
+        try:
+            with anyio.fail_after(30):
+                docs = store.similarity_search(
+                    query=question,
+                    k=k,
+                    metric=metric,
+                    filters=filters,
+                )
+        except TimeoutError:
+            return RAGResponse(
+                question=question,
+                answer="ERROR: retrieval timeout (DB/embeddings)",
+                sources=[],
+                confidence=0.0,
+                history=history,
+            )
+        log.info("retrieval took %.2fs", time.time() - t0)
 
         context = "\n\n".join(d.page_content for d in docs)
         history_text = format_history(history)
@@ -114,20 +125,34 @@ Question: {question}
             question=question,
         )
 
-        raw = await llm.ainvoke(msg)
+        # 3) LLM with timeout
+        t1 = time.time()
+        try:
+            with anyio.fail_after(60):
+                raw = await llm.ainvoke(msg)
+        except TimeoutError:
+            return RAGResponse(
+                question=question,
+                answer="ERROR: llm timeout (Ollama chat)",
+                sources=[],
+                confidence=0.0,
+                history=history,
+            )
+        log.info("llm took %.2fs", time.time() - t1)
+
         text = getattr(raw, "content", raw)
 
+        # 4) Parse JSON response
         try:
             resp = parser.parse(text)
-            # force echo history back unchanged (regardless of what the model returned)
-            resp.history = history
+            resp.history = history  # force echo
             return resp
         except OutputParserException:
             m = re.search(r"\{.*\}", str(text), flags=re.DOTALL)
             if m:
                 data = json.loads(m.group(0))
-                data = _sanitize_sources(data)
-                data["history"] = history  # force echo
+                data = sanitize_sources(data)
+                data["history"] = history
                 return RAGResponse(**data)
 
             return RAGResponse(
@@ -135,7 +160,7 @@ Question: {question}
                 answer=str(text),
                 sources=[],
                 confidence=0.0,
-                history=history,  # force echo
+                history=history,
             )
 
     class _Chain:

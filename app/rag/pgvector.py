@@ -1,25 +1,28 @@
 # app/rag/vectordb_pg.py
-import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import psycopg2
 from psycopg2.extras import Json
+
+from pgvector.psycopg2 import register_vector
+from pgvector import Vector
 
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.documents import Document
 
 log = logging.getLogger("rag.vectordb_pg")
 
-def _to_pgvector_literal(vec: List[float]) -> str:
-    return "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
 
 @dataclass
 class PgVectorStore:
     dsn: str
     table: str
     embed_model: str
+
+    # internal cache so we don't CREATE TABLE on every request
+    _schema_ready_dim: Optional[int] = None
 
     def upsert_chunks(self, doc_id: str, chunks: List[Document]) -> int:
         return self.upsert_documents(docs=chunks, doc_id=doc_id)
@@ -28,10 +31,19 @@ class PgVectorStore:
         return self.delete_by_doc_id(doc_id)
 
     def _connect(self):
-        return psycopg2.connect(self.dsn)
+        conn = psycopg2.connect(self.dsn, connect_timeout=5)
+        try:
+            register_vector(conn)
+        except psycopg2.ProgrammingError:
+            # vector extension may not exist yet; ensure_schema() will create it
+            conn.rollback()
+        return conn
 
     def ensure_schema(self, dim: int):
-        # Если ты делаешь миграции Alembic — этот метод можно не использовать.
+        # Only create schema once per process (or if dim changes)
+        if self._schema_ready_dim == dim:
+            return
+
         sql = f"""
         CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -53,15 +65,15 @@ class PgVectorStore:
                 cur.execute(sql)
             conn.commit()
 
+        self._schema_ready_dim = dim
+        log.info("Schema ensured for %s with dim=%d", self.table, dim)
+
     def upsert_documents(
         self,
         docs: List[Document],
         doc_id: str,
         ids: Optional[List[str]] = None,
     ) -> int:
-        """
-        Upsert chunks into Postgres. `ids` should be stable (doc_id:chunk_index, etc).
-        """
         embeddings_client = OllamaEmbeddings(model=self.embed_model)
 
         texts = [d.page_content for d in docs]
@@ -86,13 +98,13 @@ class PgVectorStore:
                     i,
                     d.page_content,
                     Json(md),
-                    _to_pgvector_literal(vectors[i]),
+                    Vector(vectors[i]),  # ✅ pass Vector() type
                 )
             )
 
         sql = f"""
         INSERT INTO {self.table} (id, doc_id, chunk_index, content, metadata, embedding)
-        VALUES (%s, %s, %s, %s, %s, %s::vector)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (id)
         DO UPDATE SET
           content = EXCLUDED.content,
@@ -125,15 +137,9 @@ class PgVectorStore:
         filters: Optional[Dict[str, Any]] = None,
         metric: str = "cosine",
     ) -> List[Document]:
-        """
-        metric:
-          - "cosine" uses <=> (cosine distance)
-          - "l2" uses <-> (euclidean distance)
-        filters: SQL-level constraints via metadata/doc_id/etc.
-        """
         embeddings_client = OllamaEmbeddings(model=self.embed_model)
         qv = embeddings_client.embed_query(query)
-        qv_lit = _to_pgvector_literal(qv)
+
         dim = len(qv)
         self.ensure_schema(dim=dim)
 
@@ -147,28 +153,25 @@ class PgVectorStore:
         where = []
         params: List[Any] = []
 
-        # Пример фильтра по doc_id
-        if filters and "doc_id" in filters:
+        if filters and "doc_id" in filters and filters["doc_id"]:
             where.append("doc_id = %s")
             params.append(filters["doc_id"])
 
-        # Пример фильтра по metadata (JSONB): metadata->>'file_path' = '...'
         if filters and "file_path" in filters:
             where.append("metadata->>'file_path' = %s")
             params.append(filters["file_path"])
 
         where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
-        # Важно: psycopg2 умеет писать list[float] в pgvector как array-like,
-        # но иногда нужен адаптер. В большинстве случаев работает "as is".
         sql = f"""
         SELECT content, metadata
         FROM {self.table}
         {where_sql}
-        ORDER BY embedding {dist_op} %s::vector
+        ORDER BY embedding {dist_op} %s
         LIMIT %s;
         """
-        params.append(qv_lit)
+
+        params.append(Vector(qv))  # ✅ correct type for pgvector operator
         params.append(k)
 
         out: List[Document] = []
