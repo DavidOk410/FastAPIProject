@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+langchain
+langchain-core
+langchain-community
+langchain-ollama
+psycopg2-binary
+pgvector
+httpx
+anyio
+numpy
+python-dotenv
+pypdf
