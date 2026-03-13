@@ -74,7 +74,10 @@ class PgVectorStore:
         doc_id: str,
         ids: Optional[List[str]] = None,
     ) -> int:
-        embeddings_client = OllamaEmbeddings(model=self.embed_model)
+        embeddings_client = OllamaEmbeddings(
+    model=self.embed_model,
+    base_url="http://ollama:11434"
+)
 
         texts = [d.page_content for d in docs]
         vectors = embeddings_client.embed_documents(texts)  # List[List[float]]
@@ -137,7 +140,10 @@ class PgVectorStore:
         filters: Optional[Dict[str, Any]] = None,
         metric: str = "cosine",
     ) -> List[Document]:
-        embeddings_client = OllamaEmbeddings(model=self.embed_model)
+        embeddings_client = OllamaEmbeddings(
+    model=self.embed_model,
+    base_url="http://ollama:11434"
+)
         qv = embeddings_client.embed_query(query)
 
         dim = len(qv)
