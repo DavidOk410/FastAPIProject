@@ -1,5 +1,6 @@
 # app/rag/vectordb_pg.py
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -75,9 +76,9 @@ class PgVectorStore:
         ids: Optional[List[str]] = None,
     ) -> int:
         embeddings_client = OllamaEmbeddings(
-    model=self.embed_model,
-    base_url="http://ollama:11434"
-)
+            model=self.embed_model,
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+        )
 
         texts = [d.page_content for d in docs]
         vectors = embeddings_client.embed_documents(texts)  # List[List[float]]
@@ -141,9 +142,9 @@ class PgVectorStore:
         metric: str = "cosine",
     ) -> List[Document]:
         embeddings_client = OllamaEmbeddings(
-    model=self.embed_model,
-    base_url="http://ollama:11434"
-)
+            model=self.embed_model,
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+        )
         qv = embeddings_client.embed_query(query)
 
         dim = len(qv)
