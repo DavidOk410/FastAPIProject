@@ -59,9 +59,9 @@ def build_chain(store: PgVectorStore, llm_model: str, k: int, metric: str):
     prompt = ChatPromptTemplate.from_template(rag_template)
 
     try:
-        llm = ChatOllama(model=llm_model, temperature=0, format="json")
+        llm = ChatOllama(model=llm_model, temperature=0, base_url="http://ollama:11434", format="json")
     except TypeError:
-        llm = ChatOllama(model=llm_model, temperature=0)
+        llm = ChatOllama(model=llm_model, temperature=0, base_url="http://ollama:11434")
 
     def sanitize_sources(data: dict) -> dict:
         srcs = data.get("sources", [])
