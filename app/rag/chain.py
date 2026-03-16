@@ -9,7 +9,7 @@ import anyio
 from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_ollama import ChatOllama
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 
 from app.rag.pgvector import PgVectorStore
 from app.schemas import RAGResponse, Source  # <-- unified schemas
