@@ -1,10 +1,9 @@
-version: "3.9"
-
 services:
 
   postgres:
     image: pgvector/pgvector:pg16
     container_name: rag_postgres
+    restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -17,6 +16,7 @@ services:
   ollama:
     image: ollama/ollama
     container_name: rag_ollama
+    restart: always
     ports:
       - "11434:11434"
     volumes:
@@ -25,14 +25,19 @@ services:
   fastapi:
     build: .
     container_name: rag_api
+    restart: always
     depends_on:
       - postgres
       - ollama
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ragdb
       OLLAMA_BASE_URL: http://ollama:11434
+      PYTHONPATH: /app
     ports:
       - "8000:8000"
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
   pgdata:
