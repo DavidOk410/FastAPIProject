@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     ]
 
     # models
-    LLM_MODEL: str = "llama3.1"
+    LLM_MODEL: str = "llama3.2:3b"
     EMBED_MODEL: str = "nomic-embed-text"
 
     # chunking

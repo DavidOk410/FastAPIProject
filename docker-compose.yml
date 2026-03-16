@@ -1,5 +1,4 @@
 services:
-
   postgres:
     image: pgvector/pgvector:pg16
     container_name: rag_postgres
@@ -17,13 +16,15 @@ services:
     image: ollama/ollama
     container_name: rag_ollama
     restart: always
+    dns:
+      - 8.8.8.8
     ports:
       - "11434:11434"
     volumes:
       - ollama:/root/.ollama
 
   fastapi:
-    build: app
+    build: .
     container_name: rag_api
     restart: always
     depends_on:
