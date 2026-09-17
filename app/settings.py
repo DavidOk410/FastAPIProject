@@ -1,7 +1,11 @@
 from pydantic_settings import BaseSettings
+from pathlib import Path
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
-    DOC_PATH: str = "Fluid-Mechanics-Module-7.pdf"
+    DOC_PATH: str = str(_PROJECT_ROOT / "Fluid-Mechanics-Module-7.pdf")
 
     LLM_MODEL: str = "llama3.1"
     EMBED_MODEL: str = "nomic-embed-text"
